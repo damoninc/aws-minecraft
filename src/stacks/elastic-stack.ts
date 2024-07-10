@@ -6,10 +6,13 @@ import {
   ContainerImage,
   LogDrivers,
   FargateService,
+  Volume,
 } from "aws-cdk-lib/aws-ecs";
 import { Construct } from "constructs";
 import { NetworkLoadBalancer } from "aws-cdk-lib/aws-elasticloadbalancingv2";
 import { Repository } from "aws-cdk-lib/aws-ecr";
+import { FileSystem } from "aws-cdk-lib/aws-efs";
+import { EFSVolumeConfiguration } from "aws-sdk/clients/batch";
 
 interface ElasticProps extends StackProps {
   repository: Repository;
@@ -22,22 +25,32 @@ export class ElasticStack extends Stack {
   constructor(scope: Construct, id: string, props: ElasticProps) {
     super(scope, id, props);
 
+    const efs = new FileSystem(this, "MinecraftFileSystem", { vpc: props.vpc });
+
     const taskDefinition = new FargateTaskDefinition(
       this,
       "MinecraftTaskDefinition",
       {
-        memoryLimitMiB: 4096,
-        cpu: 1024,
+        memoryLimitMiB: 8192,
+        cpu: 4096,
+        volumes: [
+          {
+            name: "minecraft_1.21",
+            efsVolumeConfiguration: { fileSystemId: efs.fileSystemId },
+          },
+        ],
       }
     );
     const container = taskDefinition.addContainer("MinecraftContainer", {
       image: ContainerImage.fromEcrRepository(props.repository),
-      memoryLimitMiB: 4096,
-      cpu: 1024,
+      memoryLimitMiB: 8192,
+      cpu: 4096,
       logging: LogDrivers.awsLogs({ streamPrefix: "MinecraftServer" }),
     });
 
     container.addPortMappings({ containerPort: 25565 });
+
+    container.addMountPoints([{ sourceVolume: "" }]);
 
     const securityGroup = new SecurityGroup(this, "MinecraftSecurityGroup", {
       vpc: props.vpc,
